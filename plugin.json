@@ -3,7 +3,7 @@
     "plugin_id": "4497908d-38c2-40c7-9223-626d564fbb6a",
     "module": "plugins.custom_automation.plugin",
     "enabled": true,
-    "version": "1.0.0",
+    "version": "1.0.1",
     "options": {},
     "metadata": {
         "author": "Mathimix",
@@ -11,7 +11,7 @@
     },
     "home_box": {
         "name": "Custom Automations",
-        "description": "Create event-driven automation rules for your lights and sensors",
+        "description": "Event-driven automation rules",
         "icon": "fa-bolt",
         "color": "#f59e0b",
         "link": "/plugins/automations"
