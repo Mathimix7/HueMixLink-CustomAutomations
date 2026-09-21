@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}Custom Automations - HueMix-Link{% endblock %}
+
+{% block head %}
+<style>
+    .rule-card { transition: all 0.2s ease; }
+    .rule-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+    .trigger-badge { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .condition-badge { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+    .action-badge { background: linear-gradient(135deg, #10b981, #059669); }
+    .toggle-switch { position: relative; width: 44px; height: 24px; display: inline-block; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #d1d5db; border-radius: 12px; transition: 0.3s; }
+    .toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    input:checked + .toggle-slider { background-color: #10b981; }
+    input:checked + .toggle-slider:before { transform: translateX(20px); }
+    .sub-row { border-left: 3px solid #e5e7eb; padding-left: 12px; margin-left: 8px; }
+    .sub-row.trigger-row { border-left-color: #f59e0b; }
+    .sub-row.condition-row { border-left-color: #6366f1; }
+    .sub-row.action-row { border-left-color: #10b981; }
+    .fade-in { animation: fadeIn 0.2s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    .empty-state { border: 2px dashed #e5e7eb; border-radius: 12px; padding: 40px; text-align: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Toast Notification -->
+<div id="toast-notification" class="hidden fixed top-4 right-4 z-50 max-w-md">
+    <div id="toast-container" class="rounded-lg shadow-2xl border-l-4 border-green-500 p-4 flex items-start space-x-3 transform transition-all duration-300 ease-out bg-green-50 translate-x-full opacity-0">
+        <div class="flex-shrink-0">
+            <i id="toast-icon" class="fas fa-check-circle text-2xl text-green-600"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+            <p id="toast-title" class="text-sm font-semibold text-gray-900"></p>
+            <p id="toast-message" class="text-sm text-gray-700 mt-1"></p>
+        </div>
+        <button onclick="hideToast()" class="flex-shrink-0 inline-flex items-center text-gray-400 hover:text-gray-600 transition-colors">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+</div>
+
+<div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-4xl pb-1 font-bold bg-gradient-to-r from-amber-500 to-yellow-500 bg-clip-text text-transparent mb-1">
+                    Custom Automations
+                </h1>
+                <p class="text-gray-600">Event-driven rules: when this happens, do that</p>
+            </div>
+            <div class="flex items-center space-x-3">
+                <button onclick="openCreateModal()" class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors inline-flex items-center">
+                    <i class="fas fa-plus mr-2"></i>New Rule
+                </button>
+                <a href="/" class="px-4 py-2 bg-zinc-500 text-white rounded-lg hover:bg-zinc-600 transition-colors inline-flex items-center">
+                    <i class="fas fa-arrow-left mr-2"></i>Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rules List -->
+    <div id="rules-container" class="space-y-4">
+        <div class="text-center py-12">
+            <div class="spinner" style="--spinner-size: 32px; --spinner-color: #d97706;"></div>
+            <p class="text-gray-500 mt-3">Loading rules...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Rule Modal -->
+<div id="rule-modal" class="hidden fixed z-50 inset-0 overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="closeModal()"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full max-h-[90vh] overflow-y-auto">
+            <!-- Modal Header -->
+            <div class="bg-gradient-to-r from-amber-500 to-yellow-500 px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <h3 id="modal-title" class="text-lg font-semibold text-white flex items-center">
+                        <i class="fas fa-bolt mr-2"></i>New Automation Rule
+                    </h3>
+                    <button onclick="closeModal()" class="text-white/80 hover:text-white">
+                        <i class="fas fa-times text-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="bg-white px-6 py-5">
+                <div class="space-y-6">
+                    <!-- Rule Name + Enabled -->
+                    <div class="flex items-center gap-4">
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Rule Name</label>
+                            <input id="rule-name" type="text" class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-amber-500 focus:border-amber-500" placeholder="Enter rule name...">
+                        </div>
+                        <div class="flex items-center gap-2 pt-6">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="rule-enabled" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="text-sm text-gray-600">Enabled</span>
+                        </div>
+                    </div>
+
+                    <!-- TRIGGER Section -->
+                    <div class="sub-row trigger-row rounded-r-lg bg-amber-50 p-4">
+                        <div class="flex items-center mb-3">
+                            <span class="trigger-badge text-white text-xs font-bold px-2 py-0.5 rounded mr-2">TRIGGER</span>
+                            <span class="text-sm text-gray-600">When this happens</span>
+                        </div>
+                        <div class="mb-3">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Event Type</label>
+                            <select id="trigger-type" onchange="onTriggerTypeChange()" class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500">
+                                <option value="">Select event type...</option>
+                                <optgroup label="Light Events">
+                                    <option value="light_state_change">Light state change</option>
+                                </optgroup>
+                                <optgroup label="Room / Zone Events">
+                                    <option value="room_state_change">Room/Zone state change</option>
+                                </optgroup>
+                                <optgroup label="Sensor Events">
+                                    <option value="motion_detected">Motion detected</option>
+                                    <option value="door_event">Door event</option>
+                                </optgroup>
+                                <optgroup label="System Events">
+                                    <option value="time_of_day">Time of day</option>
+                                    <option value="startup">System startup</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <!-- Trigger config container -->
+                        <div id="trigger-config"></div>
+                    </div>
+
+                    <!-- CONDITIONS Section -->
+                    <div class="sub-row condition-row rounded-r-lg bg-indigo-50 p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center">
+                                <span class="condition-badge text-white text-xs font-bold px-2 py-0.5 rounded mr-2">CONDITIONS</span>
+                                <span class="text-sm text-gray-600">Only if</span>
+                            </div>
+                            <button onclick="addCondition()" class="px-2.5 py-1 bg-indigo-500 text-white text-xs font-medium rounded-md hover:bg-indigo-600 transition-colors">
+                                <i class="fas fa-plus mr-1"></i>Add
+                            </button>
+                        </div>
+                        <div id="conditions-list" class="space-y-3"></div>
+                        <p id="no-conditions" class="text-xs text-gray-400 italic py-2">No conditions — rule always fires on trigger</p>
+                    </div>
+
+                    <!-- ACTIONS Section -->
+                    <div class="sub-row action-row rounded-r-lg bg-emerald-50 p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center">
+                                <span class="action-badge text-white text-xs font-bold px-2 py-0.5 rounded mr-2">ACTIONS</span>
+                                <span class="text-sm text-gray-600">Do this</span>
+                            </div>
+                            <button onclick="addAction()" class="px-2.5 py-1 bg-emerald-500 text-white text-xs font-medium rounded-md hover:bg-emerald-600 transition-colors">
+                                <i class="fas fa-plus mr-1"></i>Add
+                            </button>
+                        </div>
+                        <div id="actions-list" class="space-y-3"></div>
+                        <p id="no-actions" class="text-xs text-gray-400 italic py-2">No actions defined</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="bg-gray-50 px-6 py-3 sm:flex sm:flex-row-reverse border-t border-gray-200">
+                <button onclick="saveRule()" class="w-full inline-flex items-center justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-amber-500 text-base font-medium text-white hover:bg-amber-600 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm transition-colors">
+                    <i class="fas fa-save mr-2"></i>Save Rule
+                </button>
+                <button onclick="closeModal()" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="delete-modal" class="hidden fixed z-50 inset-0 overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="closeDeleteModal()"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+            <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div class="sm:flex sm:items-start">
+                    <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                        <i class="fas fa-exclamation-triangle text-red-600"></i>
+                    </div>
+                    <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900">Delete Rule</h3>
+                        <div class="mt-2">
+                            <p class="text-sm text-gray-500">
+                                Are you sure you want to delete "<span id="delete-rule-name" class="font-semibold text-gray-900"></span>"? This action cannot be undone.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button onclick="confirmDelete()" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">
+                    Delete
+                </button>
+                <button onclick="closeDeleteModal()" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('custom_automation.static', filename='js/automations.js') }}"></script>
+{% endblock %}
