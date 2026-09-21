@@ -223,6 +223,66 @@
         return id.length > 12 ? id.slice(0, 12) + '...' : id;
     }
 
+    function buildGroupedSelectHtml(items, key, selectedValue, groupByRoom) {
+        if (!groupByRoom) {
+            var html = '';
+            items.forEach(function(item) {
+                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
+                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
+            });
+            return html;
+        }
+        var roomGroups = {};
+        var ungrouped = [];
+        items.forEach(function(item) {
+            var rid = item.room_id || '';
+            if (rid) {
+                if (!roomGroups[rid]) roomGroups[rid] = [];
+                roomGroups[rid].push(item);
+            } else {
+                ungrouped.push(item);
+            }
+        });
+        var allGroups = (targets.rooms || []).concat(targets.zones || []);
+        var html = '';
+        allGroups.forEach(function(g) {
+            var lights = roomGroups[g.id];
+            if (!lights || !lights.length) return;
+            html += '<optgroup label="' + esc(g.name || g.id) + '">';
+            lights.forEach(function(item) {
+                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
+                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
+            });
+            html += '</optgroup>';
+        });
+        if (ungrouped.length) {
+            html += '<optgroup label="Other">';
+            ungrouped.forEach(function(item) {
+                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
+                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
+            });
+            html += '</optgroup>';
+        }
+        return html;
+    }
+
+    function buildMultiCatSelectHtml(cats, selectedValue) {
+        var html = '';
+        cats.forEach(function(cat) {
+            if (!cat) return;
+            var items = targets[cat] || [];
+            var key = (cat === 'motion_sensors' || cat === 'door_sensors') ? 'mac' : 'id';
+            var label = cat === 'zones' ? 'Zones' : cat === 'rooms' ? 'Rooms' : cat === 'lights' ? 'Lights' : cat;
+            html += '<optgroup label="' + esc(label) + '">';
+            items.forEach(function(item) {
+                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
+                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
+            });
+            html += '</optgroup>';
+        });
+        return html;
+    }
+
     function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
     function formatTime(iso) { try { return new Date(iso).toLocaleString(); } catch(e) { return iso || ''; } }
 
@@ -478,12 +538,17 @@
         if (!catDef || !catDef.targetCategory) return '';
         var items = targets[catDef.targetCategory] || [];
         var key = (catDef.targetCategory === 'motion_sensors' || catDef.targetCategory === 'door_sensors') ? 'mac' : 'id';
+        var groupByRoom = (catDef.targetCategory === 'lights');
         var html = '<select class="cond-target border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" onchange="window._onCondEntityChange(\'' + id + '\')">';
         html += '<option value="">Select ' + esc(catDef.label.toLowerCase()) + '...</option>';
-        items.forEach(function(item) {
-            var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
-            html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
-        });
+        if (groupByRoom) {
+            html += buildGroupedSelectHtml(items, key, selectedValue, true);
+        } else {
+            items.forEach(function(item) {
+                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
+                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
+            });
+        }
         html += '</select>';
         return html;
     }
@@ -783,12 +848,17 @@
         if (catDef.targetCategory) {
             var items = targets[catDef.targetCategory] || [];
             var key = (catDef.targetCategory === 'motion_sensors' || catDef.targetCategory === 'door_sensors') ? 'mac' : 'id';
+            var groupByRoom = (catDef.targetCategory === 'lights');
             var html = '<select class="act-entity border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" onchange="window._onActTypeChange(\'' + id + '\')">';
             html += '<option value="">Select ' + esc(catDef.label.toLowerCase()) + '...</option>';
-            items.forEach(function(item) {
-                var sel = (restored && String(restored._entity) === String(item[key])) ? ' selected' : '';
-                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
-            });
+            if (groupByRoom) {
+                html += buildGroupedSelectHtml(items, key, restored ? restored._entity : '', true);
+            } else {
+                items.forEach(function(item) {
+                    var sel = (restored && String(restored._entity) === String(item[key])) ? ' selected' : '';
+                    html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
+                });
+            }
             html += '</select>';
             entityWrap.innerHTML = html;
         }
