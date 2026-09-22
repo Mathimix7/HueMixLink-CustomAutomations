@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Dict, List, Optional
 
 from services.data_manager import data_manager
@@ -17,6 +18,7 @@ class AutomationStorage:
     """Read/write automation rules from JSON data file."""
 
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._ensure_file()
 
     def _ensure_file(self) -> None:
@@ -38,32 +40,36 @@ class AutomationStorage:
         data_manager.write_json(FILE_AUTOMATIONS, {'rules': rules})
 
     def list_rules(self) -> List[AutomationRule]:
-        return [AutomationRule.from_dict(r) for r in self._load()]
+        with self._lock:
+            return [AutomationRule.from_dict(r) for r in self._load()]
 
     def get_rule(self, rule_id: str) -> Optional[AutomationRule]:
-        for r in self._load():
-            if r.get('id') == rule_id:
-                return AutomationRule.from_dict(r)
-        return None
+        with self._lock:
+            for r in self._load():
+                if r.get('id') == rule_id:
+                    return AutomationRule.from_dict(r)
+            return None
 
     def save_rule(self, rule: AutomationRule) -> AutomationRule:
-        rules = self._load()
-        updated = False
-        for i, r in enumerate(rules):
-            if r.get('id') == rule.id:
-                rules[i] = rule.to_dict()
-                updated = True
-                break
-        if not updated:
-            rules.append(rule.to_dict())
-        self._save(rules)
-        return rule
+        with self._lock:
+            rules = self._load()
+            updated = False
+            for i, r in enumerate(rules):
+                if r.get('id') == rule.id:
+                    rules[i] = rule.to_dict()
+                    updated = True
+                    break
+            if not updated:
+                rules.append(rule.to_dict())
+            self._save(rules)
+            return rule
 
     def delete_rule(self, rule_id: str) -> bool:
-        rules = self._load()
-        original_len = len(rules)
-        rules = [r for r in rules if r.get('id') != rule_id]
-        if len(rules) < original_len:
-            self._save(rules)
-            return True
-        return False
+        with self._lock:
+            rules = self._load()
+            original_len = len(rules)
+            rules = [r for r in rules if r.get('id') != rule_id]
+            if len(rules) < original_len:
+                self._save(rules)
+                return True
+            return False

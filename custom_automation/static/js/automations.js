@@ -223,66 +223,6 @@
         return id.length > 12 ? id.slice(0, 12) + '...' : id;
     }
 
-    function buildGroupedSelectHtml(items, key, selectedValue, groupByRoom) {
-        if (!groupByRoom) {
-            var html = '';
-            items.forEach(function(item) {
-                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
-                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
-            });
-            return html;
-        }
-        var roomGroups = {};
-        var ungrouped = [];
-        items.forEach(function(item) {
-            var rid = item.room_id || '';
-            if (rid) {
-                if (!roomGroups[rid]) roomGroups[rid] = [];
-                roomGroups[rid].push(item);
-            } else {
-                ungrouped.push(item);
-            }
-        });
-        var allGroups = (targets.rooms || []).concat(targets.zones || []);
-        var html = '';
-        allGroups.forEach(function(g) {
-            var lights = roomGroups[g.id];
-            if (!lights || !lights.length) return;
-            html += '<optgroup label="' + esc(g.name || g.id) + '">';
-            lights.forEach(function(item) {
-                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
-                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
-            });
-            html += '</optgroup>';
-        });
-        if (ungrouped.length) {
-            html += '<optgroup label="Other">';
-            ungrouped.forEach(function(item) {
-                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
-                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
-            });
-            html += '</optgroup>';
-        }
-        return html;
-    }
-
-    function buildMultiCatSelectHtml(cats, selectedValue) {
-        var html = '';
-        cats.forEach(function(cat) {
-            if (!cat) return;
-            var items = targets[cat] || [];
-            var key = (cat === 'motion_sensors' || cat === 'door_sensors') ? 'mac' : 'id';
-            var label = cat === 'zones' ? 'Zones' : cat === 'rooms' ? 'Rooms' : cat === 'lights' ? 'Lights' : cat;
-            html += '<optgroup label="' + esc(label) + '">';
-            items.forEach(function(item) {
-                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
-                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
-            });
-            html += '</optgroup>';
-        });
-        return html;
-    }
-
     function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
     function formatTime(iso) { try { return new Date(iso).toLocaleString(); } catch(e) { return iso || ''; } }
 
@@ -538,17 +478,12 @@
         if (!catDef || !catDef.targetCategory) return '';
         var items = targets[catDef.targetCategory] || [];
         var key = (catDef.targetCategory === 'motion_sensors' || catDef.targetCategory === 'door_sensors') ? 'mac' : 'id';
-        var groupByRoom = (catDef.targetCategory === 'lights');
         var html = '<select class="cond-target border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" onchange="window._onCondEntityChange(\'' + id + '\')">';
         html += '<option value="">Select ' + esc(catDef.label.toLowerCase()) + '...</option>';
-        if (groupByRoom) {
-            html += buildGroupedSelectHtml(items, key, selectedValue, true);
-        } else {
-            items.forEach(function(item) {
-                var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
-                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
-            });
-        }
+        items.forEach(function(item) {
+            var sel = (String(item[key]) === String(selectedValue || '')) ? ' selected' : '';
+            html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
+        });
         html += '</select>';
         return html;
     }
@@ -561,7 +496,7 @@
             result._property = 'state';
             result._propValue = t === 'light_is_on' ? 'on' : 'off';
         } else if (t === 'room_is_on' || t === 'room_is_off') {
-            result._category = 'room';
+            result._category = cond.target_type || 'room';
             result._property = 'state';
             result._propValue = t === 'room_is_on' ? 'on' : 'off';
         } else if (t === 'door_is_open' || t === 'door_is_closed') {
@@ -584,6 +519,8 @@
             result._category = cond.target_type || 'room';
             result._property = 'scene';
             result._propValue = cond.scene_id || '';
+        } else if (t) {
+            result._category = cond.target_type || '';
         }
         return result;
     }
@@ -649,6 +586,7 @@
         }
         var restoredProp = data ? (mapConditionToUI(data)._property || '') : '';
         var restoredPropValue = data ? (mapConditionToUI(data)._propValue || '') : '';
+        if (!catDef) { wrap.innerHTML = ''; entityWrap.innerHTML = ''; return; }
         if (catDef.skipProperty) {
             wrap.innerHTML = '';
             var props = COND_PROPERTIES[cat];
@@ -848,17 +786,12 @@
         if (catDef.targetCategory) {
             var items = targets[catDef.targetCategory] || [];
             var key = (catDef.targetCategory === 'motion_sensors' || catDef.targetCategory === 'door_sensors') ? 'mac' : 'id';
-            var groupByRoom = (catDef.targetCategory === 'lights');
             var html = '<select class="act-entity border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" onchange="window._onActTypeChange(\'' + id + '\')">';
             html += '<option value="">Select ' + esc(catDef.label.toLowerCase()) + '...</option>';
-            if (groupByRoom) {
-                html += buildGroupedSelectHtml(items, key, restored ? restored._entity : '', true);
-            } else {
-                items.forEach(function(item) {
-                    var sel = (restored && String(restored._entity) === String(item[key])) ? ' selected' : '';
-                    html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
-                });
-            }
+            items.forEach(function(item) {
+                var sel = (restored && String(restored._entity) === String(item[key])) ? ' selected' : '';
+                html += '<option value="' + item[key] + '"' + sel + '>' + esc(item.name || item[key]) + '</option>';
+            });
             html += '</select>';
             entityWrap.innerHTML = html;
         }
@@ -1164,7 +1097,7 @@
         if (!trigger.type) { showToast('Validation', 'Please select a trigger type.', 'error'); return; }
         var def = TRIGGER_DEFS[trigger.type];
         if (def && def.showTarget && !trigger.target_id) { showToast('Validation', 'Please select a target for the trigger.', 'error'); return; }
-        var conditions = collectConditions();
+        var conditions = collectConditions().filter(function(c) { return c.type; });
         var actions = collectActions();
         if (!actions.length) { showToast('Validation', 'Please add at least one action.', 'error'); return; }
         var body = { name: name, enabled: enabled, trigger: trigger, conditions: conditions, actions: actions };
@@ -1180,8 +1113,9 @@
             return res.json();
         })
         .then(function() {
+            var msg = editingRuleId ? 'Rule updated.' : 'Rule created.';
             closeModal();
-            showToast('Success', editingRuleId ? 'Rule updated.' : 'Rule created.');
+            showToast('Success', msg);
             loadRules();
         })
         .catch(function(err) {
@@ -1233,7 +1167,11 @@
             return res.json();
         })
         .then(function(data) {
-            showToast('Test', data.message || 'Rule test executed successfully.');
+            if (data.success) {
+                showToast('Test', 'Rule test executed successfully.');
+            } else {
+                showToast('Test', 'Rule test had failures.', 'warning');
+            }
         })
         .catch(function(err) {
             showToast('Error', 'Failed to test rule: ' + err.message, 'error');

@@ -79,17 +79,18 @@ class ActionExecutor:
     def _resolve_light_id(self, action: Action, event_data=None) -> Optional[str]:
         if action.target_id and action.target_type == 'light':
             return action.target_id
+        if action.target_id:
+            return action.target_id
         if event_data:
             return event_data.get('light_id') or event_data.get('target_id')
-        return action.target_id
+        return None
 
     def _resolve_group(self, action: Action, event_data=None) -> tuple:
-        group_id = action.group_id or (event_data or {}).get('room_id')
-        group_type = action.group_type or 'room'
-        if not group_id and action.target_type in ('room', 'zone'):
-            group_id = action.target_id
-            group_type = action.target_type
-        return group_id, group_type
+        if action.group_id:
+            return action.group_id, action.group_type or 'room'
+        if action.target_type in ('room', 'zone'):
+            return action.target_id, action.target_type
+        return None, 'room'
 
     def _exec_set_light_brightness(self, action: Action, event_data=None) -> bool:
         group_id, group_type = self._resolve_group(action, event_data)

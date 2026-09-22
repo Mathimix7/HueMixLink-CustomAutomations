@@ -67,12 +67,26 @@ class CustomAutomationPlugin:
         self._intercept_automation_events()
         if self._triggers:
             self._triggers.start()
+            self._schedule_startup_trigger()
         self._log('Custom automations plugin started.')
 
     def stop(self, context=None):
         if self._triggers:
             self._triggers.stop()
         self._log('Custom automations plugin stopped.')
+
+    def _schedule_startup_trigger(self) -> None:
+        """Fire the startup trigger after a short delay so Hue state can load."""
+        import threading
+
+        def _fire():
+            try:
+                self._triggers.feed_startup()
+                self._log('Startup trigger fired.')
+            except Exception as e:
+                self._log(f'Error firing startup trigger: {e}')
+
+        threading.Timer(3.0, _fire).start()
 
     def _init_components(self) -> None:
         """Initialize storage, evaluator, executor, engine, triggers."""
