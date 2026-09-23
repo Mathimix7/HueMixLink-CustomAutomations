@@ -36,6 +36,40 @@ class AutomationEngine:
             event_data: Arbitrary data from the event
             target_id: Optional specific target this event is about
         """
+        # Hue often sends turn-on before dimming. Do not block inside the
+        # state-manager notify lock — defer so the follow-up brightness can land.
+        if self._needs_brightness_settle(trigger_type, event_data):
+            delay = 0.25
+            timer = threading.Timer(
+                delay,
+                self._process_event,
+                args=(trigger_type, event_data, target_id),
+            )
+            timer.daemon = True
+            timer.start()
+            logger.debug(
+                f"Deferring {trigger_type} evaluation {delay}s for brightness settle"
+            )
+            return
+        self._process_event(trigger_type, event_data, target_id)
+
+    def _needs_brightness_settle(self, trigger_type: str, event_data: Optional[Dict]) -> bool:
+        if trigger_type != 'light_state_change' or not event_data:
+            return False
+        changed = event_data.get('changed_attributes') or []
+        new_state = event_data.get('new_state') or {}
+        turned_on = (
+            'on' in changed
+            and (new_state.get('on') is True or new_state.get('is_on') is True)
+        )
+        if not turned_on:
+            return False
+        if 'brightness' in changed and new_state.get('brightness') is not None:
+            return False
+        return True
+
+    def _process_event(self, trigger_type: str, event_data: Optional[Dict] = None,
+                       target_id: Optional[str] = None) -> None:
         with self._lock:
             if self._processing_event:
                 logger.debug(f"Skipping nested event processing for {trigger_type}")

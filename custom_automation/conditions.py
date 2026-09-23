@@ -110,21 +110,54 @@ class ConditionEvaluator:
             return True
         return room_state.get('is_on', False) == False
 
-    def _eval_brightness_above(self, condition: Condition, event_data=None) -> bool:
+    def _brightness_value(self, condition: Condition, event_data=None) -> Optional[float]:
+        """Current brightness for a condition, preferring the triggering event payload."""
         target = self._resolve_target_id(condition, event_data)
         if not target:
-            return False
+            return None
         cat = getattr(condition, 'target_type', None) or 'light'
+
+        # Prefer brightness from the event that just fired (often newer than a
+        # partial state-manager snapshot mid-SSE).
+        if event_data:
+            ed_light = event_data.get('light_id') or event_data.get('target_id')
+            new_state = event_data.get('new_state') or {}
+            if cat not in ('room', 'zone') and ed_light == target and 'brightness' in new_state:
+                try:
+                    return float(new_state.get('brightness'))
+                except (TypeError, ValueError):
+                    pass
+            ed_room = event_data.get('room_id') or event_data.get('target_id')
+            room_state = event_data.get('room_state') or event_data.get('zone_state') or {}
+            if cat in ('room', 'zone') and ed_room == target:
+                for key in ('avg_brightness', 'brightness'):
+                    if key in room_state:
+                        try:
+                            return float(room_state.get(key))
+                        except (TypeError, ValueError):
+                            break
+
         if cat in ('room', 'zone'):
             state = self._get_room_state(target)
             if not state:
-                return False
-            brightness = state.get('avg_brightness', state.get('brightness', 0))
+                return None
+            raw = state.get('avg_brightness', state.get('brightness'))
         else:
             light_state = self._get_light_state(target)
             if not light_state:
-                return False
-            brightness = light_state.get('brightness', 0)
+                return None
+            raw = light_state.get('brightness')
+        if raw is None:
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def _eval_brightness_above(self, condition: Condition, event_data=None) -> bool:
+        brightness = self._brightness_value(condition, event_data)
+        if brightness is None:
+            return False
         threshold = float(condition.value or 0)
         op = condition.operator or '>='
         if op == '>=':
@@ -134,24 +167,13 @@ class ConditionEvaluator:
         elif op == '<':
             return brightness < threshold
         elif op == '==':
-            return abs(float(brightness) - threshold) < 0.5
+            return abs(brightness - threshold) < 0.5
         return brightness > threshold
 
     def _eval_brightness_below(self, condition: Condition, event_data=None) -> bool:
-        target = self._resolve_target_id(condition, event_data)
-        if not target:
+        brightness = self._brightness_value(condition, event_data)
+        if brightness is None:
             return False
-        cat = getattr(condition, 'target_type', None) or 'light'
-        if cat in ('room', 'zone'):
-            state = self._get_room_state(target)
-            if not state:
-                return True
-            brightness = state.get('avg_brightness', state.get('brightness', 0))
-        else:
-            light_state = self._get_light_state(target)
-            if not light_state:
-                return True
-            brightness = light_state.get('brightness', 0)
         threshold = float(condition.value or 100)
         op = condition.operator or '<'
         if op == '<=':
@@ -161,7 +183,7 @@ class ConditionEvaluator:
         elif op == '>':
             return brightness > threshold
         elif op == '==':
-            return abs(float(brightness) - threshold) < 0.5
+            return abs(brightness - threshold) < 0.5
         return brightness < threshold
 
     def _eval_door_is_open(self, condition: Condition, event_data=None) -> bool:

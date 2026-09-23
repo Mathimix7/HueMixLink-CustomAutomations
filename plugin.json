@@ -3,7 +3,7 @@
     "plugin_id": "4497908d-38c2-40c7-9223-626d564fbb6a",
     "module": "plugins.custom_automation.plugin",
     "enabled": true,
-    "version": "1.1.0",
+    "version": "1.1.1",
     "options": {},
     "metadata": {
         "author": "Mathimix",
