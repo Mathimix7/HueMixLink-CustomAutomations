@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from .models import AutomationRule, Trigger
+from .models import AutomationRule, Branch, Trigger
 from .conditions import ConditionEvaluator
 from .actions import ActionExecutor
 from .storage import AutomationStorage
@@ -24,6 +25,7 @@ class AutomationEngine:
         self._executor = executor
         self._lock = threading.RLock()
         self._processing_event = False  # Prevent re-entrant processing
+        self._cooldown_until: Dict[str, float] = {}  # rule_id -> monotonic deadline
 
     def handle_event(self, trigger_type: str, event_data: Optional[Dict] = None,
                      target_id: Optional[str] = None) -> None:
@@ -45,12 +47,31 @@ class AutomationEngine:
             for rule in rules:
                 if not rule.enabled:
                     continue
-                if not self._matches_trigger(rule.trigger, trigger_type, target_id, event_data):
+
+                # Triggers: OR — any matching trigger starts evaluation
+                trigger_matched = False
+                for trig in rule.triggers:
+                    if self._matches_trigger(trig, trigger_type, target_id, event_data):
+                        trigger_matched = True
+                        break
+                if not trigger_matched:
                     continue
 
-                # Check conditions
-                if not self._evaluator.evaluate_all(rule.conditions, event_data):
-                    logger.debug(f"Rule '{rule.name}' ({rule.id}) conditions not met")
+                # Debounce: skip if still within cooldown after last fire
+                cooldown = float(getattr(rule, 'cooldown_seconds', 0) or 0)
+                if cooldown > 0:
+                    deadline = self._cooldown_until.get(rule.id, 0.0)
+                    if time.monotonic() < deadline:
+                        logger.debug(
+                            f"Rule '{rule.name}' in cooldown "
+                            f"({deadline - time.monotonic():.1f}s left)"
+                        )
+                        continue
+
+                # Branches: first match wins (else is always true if reached)
+                chosen = self._select_branch(rule, event_data)
+                if chosen is None:
+                    logger.debug(f"Rule '{rule.name}' ({rule.id}) no branch matched")
                     continue
 
                 # Check if this was originated by automation (loop prevention)
@@ -58,18 +79,24 @@ class AutomationEngine:
                     logger.debug(f"Skipping rule '{rule.name}' - self-triggered")
                     continue
 
-                # Execute actions (in background if any delay is present)
-                logger.info(f"Firing rule '{rule.name}' ({rule.id})")
-                has_delay = any(getattr(a, 'type', '') == 'delay' for a in rule.actions)
+                # Stamp cooldown before actions so overlapping events are blocked
+                if cooldown > 0:
+                    self._cooldown_until[rule.id] = time.monotonic() + cooldown
+
+                # Execute only the chosen branch's actions
+                logger.info(
+                    f"Firing rule '{rule.name}' ({rule.id}) branch={chosen.kind} ({chosen.id})"
+                )
+                has_delay = any(getattr(a, 'type', '') == 'delay' for a in chosen.actions)
                 if has_delay:
                     t = threading.Thread(
                         target=self._exec_actions_background,
-                        args=(rule, event_data),
+                        args=(rule, chosen, event_data),
                         daemon=True,
                     )
                     t.start()
                 else:
-                    success = self._executor.execute_all(rule.actions, event_data)
+                    success = self._executor.execute_all(chosen.actions, event_data)
                     if success:
                         logger.info(f"Rule '{rule.name}' executed successfully")
                     else:
@@ -77,11 +104,21 @@ class AutomationEngine:
 
                 # Update rule stats
                 rule.last_fired = datetime.now().isoformat()
-                rule.fire_count += 1
                 self._storage.save_rule(rule)
         finally:
             with self._lock:
                 self._processing_event = False
+
+    def _select_branch(self, rule: AutomationRule, event_data: Optional[Dict]) -> Optional[Branch]:
+        """Return the first matching branch, or None if nothing matched."""
+        for branch in rule.branches:
+            if branch.kind == 'else':
+                return branch
+            if self._evaluator.evaluate_root(
+                branch.conditions, getattr(branch, 'condition_mode', 'and'), event_data
+            ):
+                return branch
+        return None
 
     def _matches_trigger(self, trigger: Trigger, event_type: str,
                          target_id: Optional[str], event_data: Optional[Dict]) -> bool:
@@ -183,10 +220,11 @@ class AutomationEngine:
             return self._executor.consume_origin(origin_key)
         return False
 
-    def _exec_actions_background(self, rule: AutomationRule, event_data: Optional[Dict]) -> None:
-        """Run rule actions in a background thread (for delays)."""
+    def _exec_actions_background(self, rule: AutomationRule, branch: Branch,
+                                 event_data: Optional[Dict]) -> None:
+        """Run a branch's actions in a background thread (for delays)."""
         try:
-            success = self._executor.execute_all(rule.actions, event_data)
+            success = self._executor.execute_all(branch.actions, event_data)
             if success:
                 logger.info(f"Rule '{rule.name}' background actions completed")
             else:

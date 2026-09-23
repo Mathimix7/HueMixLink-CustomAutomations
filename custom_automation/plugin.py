@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, jsonify, render_template, request
 
-from .models import Action, AutomationRule, Condition, Trigger
+from .models import AutomationRule, Branch, Trigger
 from .storage import AutomationStorage
 from .conditions import ConditionEvaluator
 from .actions import ActionExecutor
@@ -64,11 +64,23 @@ class CustomAutomationPlugin:
     def start(self, context=None):
         self.context = context or self.context
         self._init_components()
+        self._normalize_storage()
         self._intercept_automation_events()
         if self._triggers:
             self._triggers.start()
             self._schedule_startup_trigger()
         self._log('Custom automations plugin started.')
+
+    def _normalize_storage(self) -> None:
+        """One-time migrate any v1 rules on disk to schema v2."""
+        if not self._storage:
+            return
+        try:
+            n = self._storage.normalize_legacy_rules()
+            if n:
+                self._log(f'Migrated {n} legacy rule(s) to schema v2.')
+        except Exception as e:
+            self._log(f'Legacy rule normalize failed: {e}')
 
     def stop(self, context=None):
         if self._triggers:
@@ -217,14 +229,19 @@ class CustomAutomationPlugin:
         if not data.get('name'):
             return jsonify({'error': 'Name is required'}), 400
 
-        rule = AutomationRule(
-            id=uuid.uuid4().hex,
-            name=data['name'],
-            enabled=data.get('enabled', True),
-            trigger=Trigger.from_dict(data.get('trigger') or {}),
-            conditions=[Condition.from_dict(c) for c in (data.get('conditions') or [])],
-            actions=[Action.from_dict(a) for a in (data.get('actions') or [])],
-        )
+        error = self._validate_v2_payload(data)
+        if error:
+            return jsonify({'error': error}), 400
+
+        rule = AutomationRule.from_dict({
+            'id': uuid.uuid4().hex,
+            'name': data['name'],
+            'enabled': data.get('enabled', True),
+            'schema_version': 2,
+            'triggers': data.get('triggers') or [],
+            'branches': data.get('branches') or [],
+            'cooldown_seconds': data.get('cooldown_seconds', 0),
+        })
         self._storage.save_rule(rule)
         self._log(f"Created rule: {rule.name} ({rule.id})")
         return jsonify(rule.to_dict()), 201
@@ -239,16 +256,77 @@ class CustomAutomationPlugin:
             existing.name = data['name']
         if 'enabled' in data:
             existing.enabled = data['enabled']
-        if 'trigger' in data:
-            existing.trigger = Trigger.from_dict(data['trigger'])
-        if 'conditions' in data:
-            existing.conditions = [Condition.from_dict(c) for c in data['conditions']]
-        if 'actions' in data:
-            existing.actions = [Action.from_dict(a) for a in data['actions']]
+        if 'cooldown_seconds' in data:
+            try:
+                cd = float(data.get('cooldown_seconds') or 0)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'cooldown_seconds must be a number'}), 400
+            if cd < 0:
+                return jsonify({'error': 'cooldown_seconds must be >= 0'}), 400
+            existing.cooldown_seconds = cd
+
+        # v2-only: when triggers/branches present, replace both together
+        if 'triggers' in data or 'branches' in data:
+            error = self._validate_v2_payload(data, require_both=True)
+            if error:
+                return jsonify({'error': error}), 400
+            existing.triggers = [Trigger.from_dict(t) for t in (data.get('triggers') or [])]
+            existing.branches = [Branch.from_dict(b) for b in (data.get('branches') or [])]
+            if existing.branches and existing.branches[0].kind != 'if':
+                existing.branches[0].kind = 'if'
+            if not existing.branches:
+                existing.branches = [Branch(kind='if')]
 
         self._storage.save_rule(existing)
         self._log(f"Updated rule: {existing.name} ({existing.id})")
         return jsonify(existing.to_dict())
+
+    def _validate_v2_payload(self, data: Dict[str, Any], require_both: bool = False) -> Optional[str]:
+        """Validate v2 create/update body. Returns error string or None."""
+        if 'trigger' in data or ('conditions' in data and 'branches' not in data) or \
+           ('actions' in data and 'branches' not in data and 'triggers' not in data):
+            # Explicit v1 keys without v2 keys
+            if 'triggers' not in data and 'branches' not in data:
+                return 'Legacy payload not accepted; send triggers[] and branches[] (schema v2)'
+
+        triggers = data.get('triggers')
+        branches = data.get('branches')
+        if require_both:
+            if triggers is None or branches is None:
+                return 'Both triggers[] and branches[] are required'
+        else:
+            if triggers is None:
+                triggers = []
+            if branches is None:
+                branches = []
+
+        if not isinstance(triggers, list) or not triggers:
+            return 'triggers must be a non-empty array'
+        for i, t in enumerate(triggers):
+            if not isinstance(t, dict) or not t.get('type'):
+                return f'triggers[{i}] requires a type'
+
+        if not isinstance(branches, list) or not branches:
+            return 'branches must be a non-empty array'
+        for i, b in enumerate(branches):
+            if not isinstance(b, dict):
+                return f'branches[{i}] must be an object'
+            kind = str(b.get('kind', '') or '')
+            if kind not in ('if', 'else_if', 'else'):
+                return f'branches[{i}].kind must be if, else_if, or else'
+            mode = str(b.get('condition_mode', 'and') or 'and')
+            if mode not in ('and', 'or', 'not'):
+                return f'branches[{i}].condition_mode must be and, or, or not'
+            actions = b.get('actions')
+            if not isinstance(actions, list) or not actions:
+                return f'branches[{i}] must include at least one action'
+            if kind == 'else' and i != len(branches) - 1:
+                return 'else branch must be last'
+            if i == 0 and kind != 'if':
+                return 'first branch must be kind "if"'
+            if kind == 'else' and i != 0 and branches[i - 1].get('kind') == 'else':
+                return 'only one else branch is allowed'
+        return None
 
     def api_delete_rule(self, rule_id):
         if self._storage.delete_rule(rule_id):
@@ -270,9 +348,53 @@ class CustomAutomationPlugin:
         if not rule:
             return jsonify({'error': 'Rule not found'}), 404
 
-        # Test by executing actions directly (skip conditions)
-        success = self._executor.execute_all(rule.actions, {})
-        return jsonify({'success': success, 'rule': rule.to_dict()})
+        # Evaluate conditions the same way the live engine does
+        branch = None
+        if self._engine:
+            branch = self._engine._select_branch(rule, {})
+        elif self._evaluator:
+            for b in rule.branches:
+                if b.kind == 'else':
+                    branch = b
+                    break
+                if self._evaluator.evaluate_root(
+                    b.conditions, getattr(b, 'condition_mode', 'and'), {}
+                ):
+                    branch = b
+                    break
+
+        if branch is None:
+            return jsonify({
+                'success': True,
+                'matched': False,
+                'branch': None,
+                'branch_id': None,
+                'message': 'No conditions matched.',
+                'rule': rule.to_dict(),
+            })
+
+        has_delay = any(getattr(a, 'type', '') == 'delay' for a in branch.actions)
+        if has_delay:
+            import threading
+            actions = list(branch.actions)
+            threading.Thread(
+                target=lambda: self._executor.execute_all(actions, {}),
+                daemon=True,
+            ).start()
+            success = True
+            message = 'Run successfully.'
+        else:
+            success = self._executor.execute_all(branch.actions, {})
+            message = 'Run successfully.' if success else 'Run failed.'
+
+        return jsonify({
+            'success': success,
+            'matched': True,
+            'branch': branch.kind,
+            'branch_id': branch.id,
+            'message': message,
+            'rule': rule.to_dict(),
+        })
 
     def api_available_targets(self):
         """Return available lights, rooms, zones, motion sensors, door sensors."""

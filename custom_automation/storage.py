@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 from typing import Dict, List, Optional
 
 from services.data_manager import data_manager
 
-from .models import AutomationRule
+from .models import AutomationRule, is_legacy_rule_dict, normalize_rule_dict
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,32 @@ class AutomationStorage:
 
     def _save(self, rules: List[Dict]) -> None:
         data_manager.write_json(FILE_AUTOMATIONS, {'rules': rules})
+
+    def normalize_legacy_rules(self) -> int:
+        """One-time rewrite of v1 rules to v2 on disk. Returns count migrated.
+
+        Creates custom_automations.json.bak before the first rewrite.
+        """
+        with self._lock:
+            raw_rules = self._load()
+            legacy = [r for r in raw_rules if is_legacy_rule_dict(r)]
+            if not legacy:
+                return 0
+            try:
+                fp = data_manager._get_filepath(FILE_AUTOMATIONS)
+                if fp.exists():
+                    bak = fp.with_suffix('.json.bak')
+                    shutil.copy2(fp, bak)
+                    logger.info(f"Backed up legacy automations to {bak}")
+            except Exception as e:
+                logger.warning(f"Could not create automations backup: {e}")
+
+            migrated = [normalize_rule_dict(r) for r in raw_rules]
+            # Re-parse through the model to guarantee a clean v2 shape
+            cleaned = [AutomationRule.from_dict(r).to_dict() for r in migrated]
+            self._save(cleaned)
+            logger.info(f"Normalized {len(legacy)} legacy rule(s) to schema v2")
+            return len(legacy)
 
     def list_rules(self) -> List[AutomationRule]:
         with self._lock:

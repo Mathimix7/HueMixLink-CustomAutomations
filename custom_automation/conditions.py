@@ -47,6 +47,26 @@ class ConditionEvaluator:
         Returns:
             True if ALL conditions are met
         """
+        return self.evaluate_root(conditions, 'and', event_data)
+
+    def evaluate_root(self, conditions, mode: str = 'and', event_data=None) -> bool:
+        """Evaluate a root-level condition list under a combine mode.
+
+        Empty list always means "matches" (no gate) for and/or;
+        empty NOT fails (nothing to invert).
+        """
+        mode = (mode or 'and').lower()
+        if not conditions:
+            return mode != 'not'
+        if mode == 'not':
+            if not conditions:
+                return False
+            return not self.evaluate(conditions[0], event_data)
+        if mode == 'or':
+            for cond in conditions:
+                if self.evaluate(cond, event_data):
+                    return True
+            return False
         for cond in conditions:
             if not self.evaluate(cond, event_data):
                 return False
@@ -211,6 +231,12 @@ class ConditionEvaluator:
             if self.evaluate(sub, event_data):
                 return True
         return False
+
+    def _eval_not(self, condition: Condition, event_data=None) -> bool:
+        children = condition.conditions or []
+        if not children:
+            return False
+        return not self.evaluate(children[0], event_data)
 
     def _resolve_target_id(self, condition: Condition, event_data=None) -> Optional[str]:
         if condition.target_id:

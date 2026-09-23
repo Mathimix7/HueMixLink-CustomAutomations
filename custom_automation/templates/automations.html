@@ -6,9 +6,19 @@
 <style>
     .rule-card { transition: all 0.2s ease; }
     .rule-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
-    .trigger-badge { background: linear-gradient(135deg, #f59e0b, #d97706); }
-    .condition-badge { background: linear-gradient(135deg, #6366f1, #4f46e5); }
-    .action-badge { background: linear-gradient(135deg, #10b981, #059669); }
+    .flash-press { animation: flash-press-bg 0.7s cubic-bezier(0.4,0,0.2,1); }
+    @keyframes flash-press-bg {
+        0% { background-color: #e5e7eb; }
+        60% { background-color: #d1d5db; }
+        100% { background-color: #ffffff; }
+    }
+    .badge-soft { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 9999px; border: 1px solid transparent; }
+    .trigger-badge { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+    .condition-badge { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+    .action-badge { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .branch-if-badge { background: #fffbeb; color: #b45309; border-color: #fcd34d; }
+    .branch-elif-badge { background: #ffedd5; color: #c2410c; border-color: #fdba74; }
+    .branch-else-badge { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
     .toggle-switch { position: relative; width: 44px; height: 24px; display: inline-block; }
     .toggle-switch input { opacity: 0; width: 0; height: 0; }
     .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #d1d5db; border-radius: 12px; transition: 0.3s; }
@@ -22,6 +32,190 @@
     .fade-in { animation: fadeIn 0.2s ease-in; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
     .empty-state { border: 2px dashed #e5e7eb; border-radius: 12px; padding: 40px; text-align: center; }
+
+    /* Accordion chrome */
+    .acc-section {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+        overflow: hidden;
+    }
+    .acc-header {
+        display: flex; align-items: center; gap: 10px;
+        width: 100%; text-align: left;
+        padding: 10px 12px;
+        background: #f9fafb;
+        border: 0; cursor: pointer;
+        user-select: none;
+    }
+    .acc-header:hover { background: #f3f4f6; }
+    .acc-header .chevron { transition: transform 0.15s ease; color: #9ca3af; }
+    .acc-section.open > .acc-header .chevron { transform: rotate(180deg); }
+    .acc-body { display: none; padding: 12px; }
+    .acc-section.open > .acc-body { display: block; }
+    .acc-summary {
+        flex: 1; min-width: 0;
+        font-size: 12px; color: #6b7280;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .branch-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+        overflow: hidden;
+    }
+    .branch-card.open { border-color: #d1d5db; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+    .branch-card .branch-header {
+        display: flex; align-items: center; gap: 10px;
+        width: 100%;
+        padding: 10px 12px;
+        background: #f9fafb;
+        border: 0; cursor: pointer;
+        text-align: left;
+        user-select: none;
+    }
+    .branch-card .branch-header:hover { background: #f3f4f6; }
+    .branch-card .branch-body { display: none; border-top: 1px solid #f3f4f6; }
+    .branch-card.open .branch-body { display: block; }
+    .branch-card .branch-header .chevron { transition: transform 0.15s ease; color: #9ca3af; margin-left: auto; }
+    .branch-card.open .branch-header .chevron { transform: rotate(180deg); }
+
+    .condition-group {
+        border: 1px solid #c7d2fe;
+        background: #eef2ff;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        overflow: hidden;
+    }
+    .condition-group > .group-header {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        padding: 8px;
+        cursor: pointer;
+    }
+    .condition-group > .group-header:hover { background: #e0e7ff; }
+    .condition-group > .group-body { display: none; padding: 0 8px 8px; }
+    .condition-group > .group-actions { display: none; }
+    .condition-group.open > .group-body { display: block; }
+    .condition-group.open > .group-actions { display: flex; }
+    .condition-group > .group-header .chevron { transition: transform 0.15s ease; color: #6366f1; }
+    .condition-group.open > .group-header .chevron { transform: rotate(180deg); }
+
+    .trigger-row-card {
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+    }
+
+    .drag-handle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #9ca3af;
+        cursor: grab;
+        user-select: none;
+        -webkit-user-select: none;
+        padding: 2px 6px;
+        border-radius: 4px;
+        flex-shrink: 0;
+        touch-action: none;
+    }
+    .drag-handle:hover { color: #6b7280; background: rgba(0,0,0,0.06); }
+    .drag-handle:active { cursor: grabbing; }
+    body.is-sorting {
+        cursor: grabbing !important;
+        user-select: none !important;
+        -webkit-user-select: none !important;
+    }
+    body.is-sorting * { cursor: grabbing !important; }
+    [data-sortable-item].dragging {
+        opacity: 0.4;
+        outline: 2px dashed #f59e0b;
+        outline-offset: 2px;
+        pointer-events: none;
+    }
+    [data-sortable-item].drop-before {
+        box-shadow: inset 0 3px 0 0 #f59e0b;
+    }
+    [data-sortable-item].drop-after {
+        box-shadow: inset 0 -3px 0 0 #f59e0b;
+    }
+    [data-sortable-list].drop-into {
+        outline: 2px dashed #f59e0b;
+        outline-offset: 2px;
+        background: #fffbeb;
+        border-radius: 8px;
+        min-height: 36px;
+    }
+    .condition-group.drop-target {
+        box-shadow: 0 0 0 2px #f59e0b;
+    }
+
+    /* Root conditions — controllable group */
+    .cond-root {
+        border: 1px solid #c7d2fe;
+        background: #eef2ff;
+        border-radius: 8px;
+        padding: 8px;
+        margin-top: 4px;
+    }
+    .cond-root-bar {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        margin-bottom: 8px;
+    }
+
+    /* Modal: outer fixed, only body scrolls */
+    #rule-modal {
+        overflow: hidden;
+        display: none;
+    }
+    #rule-modal:not(.hidden) {
+        display: block;
+    }
+    .modal-viewport {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        pointer-events: none;
+    }
+    .modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(107, 114, 128, 0.75);
+        pointer-events: auto;
+    }
+    .modal-shell {
+        position: relative;
+        pointer-events: auto;
+        width: 100%;
+        max-width: 56rem;
+        height: min(90vh, 800px);
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #fff;
+        border-radius: 0.5rem;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+    .modal-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+    .modal-footer {
+        flex: 0 0 auto;
+        border-top: 1px solid #e5e7eb;
+        background: #f9fafb;
+    }
 </style>
 {% endblock %}
 
@@ -50,7 +244,7 @@
                 <h1 class="text-4xl pb-1 font-bold bg-gradient-to-r from-amber-500 to-yellow-500 bg-clip-text text-transparent mb-1">
                     Custom Automations
                 </h1>
-                <p class="text-gray-600">Event-driven rules: when this happens, do that</p>
+                <p class="text-gray-600">Configure event-driven rules for lights, scenes, and sensors</p>
             </div>
             <div class="flex items-center space-x-3">
                 <button onclick="openCreateModal()" class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors inline-flex items-center">
@@ -73,13 +267,12 @@
 </div>
 
 <!-- Rule Modal -->
-<div id="rule-modal" class="hidden fixed z-50 inset-0 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="closeModal()"></div>
-        <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
-        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full max-h-[90vh] overflow-y-auto">
+<div id="rule-modal" class="hidden fixed z-50 inset-0">
+    <div class="modal-backdrop" onclick="closeModal()"></div>
+    <div class="modal-viewport">
+        <div class="modal-shell sm:max-w-4xl sm:w-full">
             <!-- Modal Header -->
-            <div class="bg-gradient-to-r from-amber-500 to-yellow-500 px-6 py-4">
+            <div class="bg-gradient-to-r from-amber-500 to-yellow-500 px-6 py-4 flex-shrink-0">
                 <div class="flex items-center justify-between">
                     <h3 id="modal-title" class="text-lg font-semibold text-white flex items-center">
                         <i class="fas fa-bolt mr-2"></i>New Automation Rule
@@ -90,16 +283,22 @@
                 </div>
             </div>
 
-            <!-- Modal Body -->
-            <div class="bg-white px-6 py-5">
-                <div class="space-y-6">
-                    <!-- Rule Name + Enabled -->
-                    <div class="flex items-center gap-4">
-                        <div class="flex-1">
+            <!-- Modal Body (only this scrolls) -->
+            <div class="modal-scroll bg-white px-6 py-5">
+                <div class="space-y-5">
+                    <!-- Rule Name + Debounce + Enabled -->
+                    <div class="flex items-end gap-4 flex-wrap">
+                        <div class="flex-1 min-w-[180px]">
                             <label class="block text-sm font-medium text-gray-700 mb-1">Rule Name</label>
                             <input id="rule-name" type="text" class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-amber-500 focus:border-amber-500" placeholder="Enter rule name...">
                         </div>
-                        <div class="flex items-center gap-2 pt-6">
+                        <div class="pb-0">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Debounce (s)</label>
+                            <input id="rule-cooldown" type="number" min="0" step="0.1" value="0.1"
+                                class="block w-28 border border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500"
+                                title="Ignore triggers for this many seconds after the rule fires">
+                        </div>
+                        <div class="flex items-center gap-2 pb-2">
                             <label class="toggle-switch">
                                 <input type="checkbox" id="rule-enabled" checked>
                                 <span class="toggle-slider"></span>
@@ -108,70 +307,46 @@
                         </div>
                     </div>
 
-                    <!-- TRIGGER Section -->
-                    <div class="sub-row trigger-row rounded-r-lg bg-amber-50 p-4">
-                        <div class="flex items-center mb-3">
-                            <span class="trigger-badge text-white text-xs font-bold px-2 py-0.5 rounded mr-2">TRIGGER</span>
-                            <span class="text-sm text-gray-600">When this happens</span>
+                    <!-- TRIGGERS (collapsible) -->
+                    <div id="triggers-section" class="acc-section open">
+                        <button type="button" class="acc-header" onclick="window._toggleSection('triggers-section')">
+                            <span class="badge-soft trigger-badge">WHEN</span>
+                            <span class="acc-summary" id="triggers-summary">No triggers</span>
+                            <i class="fas fa-chevron-down chevron text-xs"></i>
+                        </button>
+                        <div class="acc-body">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs text-gray-500">Runs if <strong>any</strong> trigger matches</span>
+                                <button onclick="addTrigger()" class="px-2.5 py-1 bg-amber-500 text-white text-xs font-medium rounded-md hover:bg-amber-600 transition-colors">
+                                    <i class="fas fa-plus mr-1"></i>Add trigger
+                                </button>
+                            </div>
+                            <div id="triggers-list" data-sortable-list="1"></div>
+                            <p id="no-triggers" class="text-xs text-gray-400 italic py-1">No triggers yet</p>
                         </div>
-                        <div class="mb-3">
-                            <label class="block text-xs font-medium text-gray-500 mb-1">Event Type</label>
-                            <select id="trigger-type" onchange="onTriggerTypeChange()" class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500">
-                                <option value="">Select event type...</option>
-                                <optgroup label="Light Events">
-                                    <option value="light_state_change">Light state change</option>
-                                </optgroup>
-                                <optgroup label="Room / Zone Events">
-                                    <option value="room_state_change">Room/Zone state change</option>
-                                </optgroup>
-                                <optgroup label="Sensor Events">
-                                    <option value="motion_detected">Motion detected</option>
-                                    <option value="door_event">Door event</option>
-                                </optgroup>
-                                <optgroup label="System Events">
-                                    <option value="time_of_day">Time of day</option>
-                                    <option value="startup">System startup</option>
-                                </optgroup>
-                            </select>
-                        </div>
-                        <!-- Trigger config container -->
-                        <div id="trigger-config"></div>
                     </div>
 
-                    <!-- CONDITIONS Section -->
-                    <div class="sub-row condition-row rounded-r-lg bg-indigo-50 p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center">
-                                <span class="condition-badge text-white text-xs font-bold px-2 py-0.5 rounded mr-2">CONDITIONS</span>
-                                <span class="text-sm text-gray-600">Only if</span>
-                            </div>
-                            <button onclick="addCondition()" class="px-2.5 py-1 bg-indigo-500 text-white text-xs font-medium rounded-md hover:bg-indigo-600 transition-colors">
-                                <i class="fas fa-plus mr-1"></i>Add
+                    <!-- RULE FLOW (branch accordion) -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="badge-soft condition-badge">THEN</span>
+                            <span class="text-xs text-gray-500">First matching branch runs</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button id="btn-add-elif" onclick="addBranch('else_if')" class="px-2.5 py-1 bg-orange-500 text-white text-xs font-medium rounded-md hover:bg-orange-600 transition-colors">
+                                <i class="fas fa-plus mr-1"></i>Else If
+                            </button>
+                            <button id="btn-add-else" onclick="addBranch('else')" class="px-2.5 py-1 bg-gray-500 text-white text-xs font-medium rounded-md hover:bg-gray-600 transition-colors">
+                                <i class="fas fa-plus mr-1"></i>Else
                             </button>
                         </div>
-                        <div id="conditions-list" class="space-y-3"></div>
-                        <p id="no-conditions" class="text-xs text-gray-400 italic py-2">No conditions — rule always fires on trigger</p>
                     </div>
-
-                    <!-- ACTIONS Section -->
-                    <div class="sub-row action-row rounded-r-lg bg-emerald-50 p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center">
-                                <span class="action-badge text-white text-xs font-bold px-2 py-0.5 rounded mr-2">ACTIONS</span>
-                                <span class="text-sm text-gray-600">Do this</span>
-                            </div>
-                            <button onclick="addAction()" class="px-2.5 py-1 bg-emerald-500 text-white text-xs font-medium rounded-md hover:bg-emerald-600 transition-colors">
-                                <i class="fas fa-plus mr-1"></i>Add
-                            </button>
-                        </div>
-                        <div id="actions-list" class="space-y-3"></div>
-                        <p id="no-actions" class="text-xs text-gray-400 italic py-2">No actions defined</p>
-                    </div>
+                    <div id="branches-list" class="space-y-3" data-sortable-list="1"></div>
                 </div>
             </div>
 
             <!-- Modal Footer -->
-            <div class="bg-gray-50 px-6 py-3 sm:flex sm:flex-row-reverse border-t border-gray-200">
+            <div class="modal-footer px-6 py-3 sm:flex sm:flex-row-reverse">
                 <button onclick="saveRule()" class="w-full inline-flex items-center justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-amber-500 text-base font-medium text-white hover:bg-amber-600 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm transition-colors">
                     <i class="fas fa-save mr-2"></i>Save Rule
                 </button>
